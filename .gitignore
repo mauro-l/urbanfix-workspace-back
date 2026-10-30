@@ -1,0 +1,6 @@
+# Agent tooling cache
+.atl/.skill-registry.cache.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
