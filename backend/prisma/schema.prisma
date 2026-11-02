@@ -1,5 +1,4 @@
-// Prisma schema for the UrbanFix backend.
-// Models are added as the weekly scope is implemented.
+// Point 3 draft. Workflow-supporting models are added in later project steps.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +8,76 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  CLIENTE
+  TECNICO
+  ADMIN
+}
+
+// Rejection is not a global request status; T-03 keeps the request PENDIENTE.
+// COMPLETADA is final; there is no separate CERRADA state.
+enum ServiceStatus {
+  PENDIENTE
+  ACEPTADA
+  EN_PROGRESO
+  COMPLETADA
+  CANCELADA
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String   @map("full_name")
+  phone        String?
+  role         UserRole
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  clientRequests     ServiceRequest[] @relation("RequestClient")
+  technicianRequests ServiceRequest[] @relation("RequestTechnician")
+
+  @@map("users")
+}
+
+// Minimal supporting model so ServiceRequest has a real service relation.
+model Service {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  requests ServiceRequest[]
+
+  @@map("services")
+}
+
+model ServiceRequest {
+  id                 String        @id @default(uuid()) @db.Uuid
+  clientId           String        @map("client_id") @db.Uuid
+  technicianId       String?       @map("technician_id") @db.Uuid
+  serviceId          String        @map("service_id") @db.Uuid
+  title              String
+  description        String
+  address            String
+  budget             Decimal?
+  status             ServiceStatus @default(PENDIENTE)
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  acceptedAt         DateTime?     @map("accepted_at")
+  startedAt          DateTime?     @map("started_at")
+  completedAt        DateTime?     @map("completed_at")
+  cancelledAt        DateTime?     @map("cancelled_at")
+  cancellationReason String?       @map("cancellation_reason")
+
+  client     User    @relation("RequestClient", fields: [clientId], references: [id], onDelete: Restrict)
+  technician User?   @relation("RequestTechnician", fields: [technicianId], references: [id], onDelete: Restrict)
+  service    Service @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@map("service_requests")
 }
