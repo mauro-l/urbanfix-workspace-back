@@ -1,5 +1,15 @@
-# Agent tooling cache
-.atl/.skill-registry.cache.json
+# AI / agent tooling (local only, never committed)
+.agents/
+.atl/
+opencode.json
+opencode.jsonc
+skills-lock.json
+AGENTS.md
+CLAUDE.md
+.claude/
+.cursor/
+.codex/
+.windsurf/
 
 # OS / editor noise
 .DS_Store
