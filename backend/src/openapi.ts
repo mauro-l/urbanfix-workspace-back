@@ -5,8 +5,7 @@ const errorResponse = { $ref: '#/components/responses/ApiError' };
 const pageParameter = { $ref: '#/components/parameters/Page' };
 const limitParameter = { $ref: '#/components/parameters/Limit' };
 const bearerSecurity = [{ bearerAuth: [] }];
-const plannedOperation =
-  'Contrato planificado para el MVP; la ruta todavía no está implementada.';
+const plannedOperation = 'No funciona, ruta pendiente de implementar.';
 
 export const openapi = {
   openapi: '3.0.3',
@@ -16,13 +15,9 @@ export const openapi = {
     description:
       'Contrato REST del MVP. Las operaciones que indican que están planificadas aún no están implementadas.',
   },
-  servers: [
-    { url: 'http://localhost:3001', description: 'Local development' },
-    {
-      url: 'https://urbanfix-api-6e8o.onrender.com',
-      description: 'Production (Render)',
-    },
-  ],
+  // The served spec overrides this with the request origin (see app.ts) so the
+  // docs work from localhost, Docker and Render without editing this file.
+  servers: [{ url: '/', description: 'Current origin' }],
   tags: [
     { name: 'Health', description: 'Liveness of the API process' },
     { name: 'Auth', description: 'Registro e inicio de sesión' },
