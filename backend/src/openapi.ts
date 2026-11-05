@@ -53,7 +53,7 @@ export const openapi = {
       post: {
         tags: ['Auth'],
         summary: 'Register a client or technician',
-        description: `${plannedOperation} El email se recorta y normaliza a minúsculas. Solo se permiten los roles CLIENTE y TECNICO. Devuelve el perfil público y un JWT.`,
+        description: 'El email se recorta y normaliza a minúsculas. Solo se permiten los roles CLIENTE y TECNICO. Devuelve el perfil público y un JWT.',
         operationId: 'registerUser',
         security: [],
         requestBody: {
@@ -90,7 +90,7 @@ export const openapi = {
       post: {
         tags: ['Auth'],
         summary: 'Log in and receive a JWT',
-        description: `${plannedOperation} Una cuenta inactiva no puede autenticarse.`,
+        description: 'Una cuenta inactiva no puede autenticarse.',
         operationId: 'loginUser',
         security: [],
         requestBody: {
