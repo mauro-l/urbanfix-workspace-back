@@ -388,6 +388,12 @@ export const openapi = {
           fullName: { type: 'string' },
           phone: { type: 'string', nullable: true },
           role: { type: 'string', enum: ['CLIENTE', 'TECNICO'] },
+          serviceIds: {
+            type: 'array',
+            description: 'Rubros activos que ofrece el técnico. Solo aplica al rol TECNICO.',
+            uniqueItems: true,
+            items: { type: 'string', format: 'uuid' },
+          },
         },
       },
       LoginRequest: {
@@ -408,13 +414,25 @@ export const openapi = {
       },
       PublicUser: {
         type: 'object',
-        required: ['id', 'email', 'fullName', 'phone', 'role', 'isActive', 'createdAt'],
+        required: ['id', 'email', 'fullName', 'phone', 'role', 'services', 'isActive', 'createdAt'],
         properties: {
           id: { type: 'string', format: 'uuid' },
           email: { type: 'string', format: 'email' },
           fullName: { type: 'string' },
           phone: { type: 'string', nullable: true },
           role: { type: 'string', enum: ['CLIENTE', 'TECNICO', 'ADMIN'] },
+          services: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['id', 'name', 'slug'],
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                name: { type: 'string' },
+                slug: { type: 'string' },
+              },
+            },
+          },
           isActive: { type: 'boolean' },
           createdAt: { type: 'string', format: 'date-time' },
         },

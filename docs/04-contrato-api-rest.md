@@ -69,7 +69,7 @@ Registra una cuenta pública. Solo acepta `CLIENTE` o `TECNICO`; nunca `ADMIN` (
 }
 ```
 
-`phone` es opcional. `email`, `password`, `fullName` y `role` son obligatorios. Se recortan espacios y se normaliza el email a minúsculas antes de guardarlo (decisión confirmada). La contraseña requiere al menos 8 caracteres, siguiendo el ejemplo de autenticación de Semana 3.
+`phone` y `serviceIds` son opcionales. `email`, `password`, `fullName` y `role` son obligatorios. `serviceIds` solo se acepta para `TECNICO`; cada ID debe corresponder a un servicio activo y no puede repetirse. Se recortan espacios y se normaliza el email a minúsculas antes de guardarlo (decisión confirmada). La contraseña requiere al menos 8 caracteres, siguiendo el ejemplo de autenticación de Semana 3.
 
 **`201 Created`**
 
@@ -81,6 +81,7 @@ Registra una cuenta pública. Solo acepta `CLIENTE` o `TECNICO`; nunca `ADMIN` (
     "fullName": "Ana Pérez",
     "phone": "+54 11 5555-0101",
     "role": "CLIENTE",
+    "services": [],
     "isActive": true,
     "createdAt": "2026-11-05T12:00:00.000Z"
   },
@@ -89,6 +90,8 @@ Registra una cuenta pública. Solo acepta `CLIENTE` o `TECNICO`; nunca `ADMIN` (
 ```
 
 Errores: `400` si los datos son inválidos, `409` si el email ya está registrado, `500` ante un error inesperado.
+
+Para `TECNICO`, `serviceIds` permite asociar uno o varios rubros existentes. El perfil de respuesta devuelve los rubros asociados en `services`; clientes y técnicos sin rubros reciben una lista vacía. El API actual no expone todavía una operación para editar esos rubros después del registro.
 
 ### `POST /api/auth/login`
 

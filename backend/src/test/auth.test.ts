@@ -21,14 +21,32 @@ type StoredUser = {
   fullName: string;
   phone: string | null;
   role: UserRole;
+  services: StoredService[];
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
 
-type FakePrismaOptions = Partial<StoredUser>[];
+type StoredService = {
+  id: string;
+  name: string;
+  slug: string;
+  isActive: boolean;
+};
 
-function createFakePrisma(seedUsers: FakePrismaOptions = []) {
+type FakePrismaOptions = Partial<StoredUser>[];
+type FakeServiceOptions = Partial<StoredService>[];
+
+function createFakePrisma(
+  seedUsers: FakePrismaOptions = [],
+  seedServices: FakeServiceOptions = [],
+) {
+  const services: StoredService[] = seedServices.map((service, index) => ({
+    id: service.id ?? `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    name: service.name ?? `Service ${index}`,
+    slug: service.slug ?? `service-${index}`,
+    isActive: service.isActive ?? true,
+  }));
   const users: StoredUser[] = seedUsers.map((user, index) => ({
     id: user.id ?? `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
     email: user.email ?? `user${index}@example.test`,
@@ -36,12 +54,13 @@ function createFakePrisma(seedUsers: FakePrismaOptions = []) {
     fullName: user.fullName ?? `User ${index}`,
     phone: user.phone ?? null,
     role: user.role ?? ('CLIENTE' as UserRole),
+    services: user.services ?? [],
     isActive: user.isActive ?? true,
     createdAt: user.createdAt ?? new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: user.updatedAt ?? new Date('2026-01-01T00:00:00.000Z'),
   }));
 
-  function project(user: StoredUser, select?: Record<string, boolean>) {
+  function project(user: StoredUser, select?: Record<string, unknown>) {
     if (!select) return user;
     return Object.fromEntries(
       Object.entries(select)
@@ -57,7 +76,7 @@ function createFakePrisma(seedUsers: FakePrismaOptions = []) {
         select,
       }: {
         where: { id?: string; email?: string };
-        select?: Record<string, boolean>;
+        select?: Record<string, unknown>;
       }) => {
         const user = users.find((candidate) =>
           where.id ? candidate.id === where.id : candidate.email === where.email,
@@ -68,8 +87,10 @@ function createFakePrisma(seedUsers: FakePrismaOptions = []) {
         data,
         select,
       }: {
-        data: Omit<StoredUser, 'id' | 'isActive' | 'createdAt' | 'updatedAt'>;
-        select?: Record<string, boolean>;
+        data: Omit<StoredUser, 'id' | 'isActive' | 'createdAt' | 'updatedAt' | 'services'> & {
+          services?: { connect: { id: string }[] };
+        };
+        select?: Record<string, unknown>;
       }) => {
         if (users.some((user) => user.email === data.email)) {
           throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
@@ -77,6 +98,9 @@ function createFakePrisma(seedUsers: FakePrismaOptions = []) {
 
         const user: StoredUser = {
           ...data,
+          services: (data.services?.connect ?? [])
+            .map(({ id }) => services.find((service) => service.id === id))
+            .filter((service): service is StoredService => service !== undefined),
           id: `00000000-0000-4000-8000-${String(users.length + 1).padStart(12, '0')}`,
           isActive: true,
           createdAt: new Date(),
@@ -85,6 +109,18 @@ function createFakePrisma(seedUsers: FakePrismaOptions = []) {
         users.push(user);
         return project(user, select);
       },
+    },
+    service: {
+      findMany: async ({
+        where,
+      }: {
+        where: { id?: { in?: string[] }; isActive?: boolean };
+      }) =>
+        services.filter(
+          (service) =>
+            (!where.id?.in || where.id.in.includes(service.id)) &&
+            (where.isActive === undefined || service.isActive === where.isActive),
+        ),
     },
   };
 
@@ -138,7 +174,7 @@ test('registration normalizes email, stores a bcrypt hash, and returns a JWT wit
       role: 'CLIENTE',
     });
     const body = (await response.json()) as {
-      user: Record<string, unknown>;
+      user: Record<string, unknown> & { services: StoredService[] };
       token: string;
     };
 
@@ -146,6 +182,7 @@ test('registration normalizes email, stores a bcrypt hash, and returns a JWT wit
     assert.equal(body.user.email, 'ana@example.test');
     assert.equal(body.user.fullName, 'Ana Pérez');
     assert.equal(body.user.role, 'CLIENTE');
+    assert.deepEqual(body.user.services, []);
     assert.equal('passwordHash' in body.user, false);
     assert.equal(users[0]?.email, 'ana@example.test');
     assert.notEqual(users[0]?.passwordHash, DEMO_PASSWORD);
@@ -157,6 +194,133 @@ test('registration normalizes email, stores a bcrypt hash, and returns a JWT wit
     };
     assert.equal(tokenPayload.userId, body.user.id);
     assert.equal(tokenPayload.role, 'CLIENTE');
+  });
+});
+
+test('registration associates a technician with multiple services and returns them', async () => {
+  const serviceIds = [
+    '10000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000002',
+  ];
+  const { prisma, users } = createFakePrisma([], [
+    { id: serviceIds[0], name: 'Plomería', slug: 'plomeria' },
+    { id: serviceIds[1], name: 'Electricidad', slug: 'electricidad' },
+  ]);
+  const app = createApp({ prisma, jwtSecret: JWT_SECRET });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await sendJson(baseUrl, '/api/auth/register', 'POST', {
+      email: 'tecnico@example.test',
+      password: DEMO_PASSWORD,
+      fullName: 'Técnico con varios rubros',
+      role: 'TECNICO',
+      serviceIds,
+    });
+    const body = (await response.json()) as {
+      user: { services: { id: string; name: string; slug: string }[] };
+    };
+
+    assert.equal(response.status, 201);
+    assert.deepEqual(
+      body.user.services.map(({ id }) => id),
+      serviceIds,
+    );
+    assert.deepEqual(
+      users[0]?.services.map(({ id }) => id),
+      serviceIds,
+    );
+  });
+});
+
+test('technician registration remains compatible without serviceIds or with an empty list', async () => {
+  const { prisma, users } = createFakePrisma();
+  const app = createApp({ prisma, jwtSecret: JWT_SECRET });
+
+  await withServer(app, async (baseUrl) => {
+    for (const [index, includeServiceIds] of [false, true].entries()) {
+      const response = await sendJson(baseUrl, '/api/auth/register', 'POST', {
+        email: `legacy-tech-${index}@example.test`,
+        password: DEMO_PASSWORD,
+        fullName: 'Técnico',
+        role: 'TECNICO',
+        ...(includeServiceIds ? { serviceIds: [] } : {}),
+      });
+      const body = (await response.json()) as {
+        user: { services: StoredService[] };
+      };
+
+      assert.equal(response.status, 201);
+      assert.deepEqual(body.user.services, []);
+    }
+
+    assert.equal(users.length, 2);
+  });
+});
+
+test('registration rejects service selections for a client', async () => {
+  const { prisma, users } = createFakePrisma([], [
+    { id: '10000000-0000-4000-8000-000000000001', name: 'Plomería', slug: 'plomeria' },
+  ]);
+  const app = createApp({ prisma, jwtSecret: JWT_SECRET });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await sendJson(baseUrl, '/api/auth/register', 'POST', {
+      email: 'cliente@example.test',
+      password: DEMO_PASSWORD,
+      fullName: 'Cliente',
+      role: 'CLIENTE',
+      serviceIds: ['10000000-0000-4000-8000-000000000001'],
+    });
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: 'Solo los técnicos pueden ofrecer servicios.',
+    });
+    assert.equal(users.length, 0);
+  });
+});
+
+test('registration rejects unknown, inactive, or malformed service selections', async () => {
+  const { prisma, users } = createFakePrisma([], [
+    { id: '10000000-0000-4000-8000-000000000001', name: 'Plomería', slug: 'plomeria' },
+    {
+      id: '10000000-0000-4000-8000-000000000002',
+      name: 'Electricidad',
+      slug: 'electricidad',
+      isActive: false,
+    },
+  ]);
+  const app = createApp({ prisma, jwtSecret: JWT_SECRET });
+
+  await withServer(app, async (baseUrl) => {
+    const invalidSelections: { serviceIds: unknown; error: string }[] = [
+      { serviceIds: ['not-a-uuid'], error: 'Los servicios deben ser UUID válidos sin duplicados.' },
+      {
+        serviceIds: [
+          '10000000-0000-4000-8000-000000000001',
+          '10000000-0000-4000-8000-000000000001',
+        ],
+        error: 'Los servicios deben ser UUID válidos sin duplicados.',
+      },
+      { serviceIds: '10000000-0000-4000-8000-000000000001', error: 'Los servicios deben ser UUID válidos sin duplicados.' },
+      { serviceIds: ['10000000-0000-4000-8000-000000000002'], error: 'Uno o más servicios no existen o están inactivos.' },
+      { serviceIds: ['10000000-0000-4000-8000-000000000003'], error: 'Uno o más servicios no existen o están inactivos.' },
+    ];
+    for (const [index, { serviceIds, error }] of invalidSelections.entries()) {
+      const response = await sendJson(baseUrl, '/api/auth/register', 'POST', {
+        email: `tecnico-${index}@example.test`,
+        password: DEMO_PASSWORD,
+        fullName: 'Técnico',
+        role: 'TECNICO',
+        serviceIds,
+      });
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), {
+        error,
+      });
+      assert.equal(users.length, 0);
+    }
   });
 });
 
@@ -201,12 +365,27 @@ test('registration rejects short passwords, ADMIN, and duplicate emails', async 
 
 test('login verifies password and returns the public user and JWT', async () => {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 4);
+  const technicianServices: StoredService[] = [
+    {
+      id: '10000000-0000-4000-8000-000000000001',
+      name: 'Plomería',
+      slug: 'plomeria',
+      isActive: true,
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000002',
+      name: 'Electricidad',
+      slug: 'electricidad',
+      isActive: true,
+    },
+  ];
   const { prisma } = createFakePrisma([
     {
       email: 'ana@example.test',
       passwordHash,
       fullName: 'Ana Pérez',
       role: 'TECNICO' as UserRole,
+      services: technicianServices,
     },
   ]);
   const app = createApp({ prisma, jwtSecret: JWT_SECRET });
@@ -217,13 +396,17 @@ test('login verifies password and returns the public user and JWT', async () => 
       password: DEMO_PASSWORD,
     });
     const body = (await response.json()) as {
-      user: Record<string, unknown>;
+      user: Record<string, unknown> & { services: StoredService[] };
       token: string;
     };
 
     assert.equal(response.status, 200);
     assert.equal(body.user.email, 'ana@example.test');
     assert.equal(body.user.role, 'TECNICO');
+    assert.deepEqual(
+      body.user.services.map(({ slug }) => slug),
+      ['plomeria', 'electricidad'],
+    );
     assert.equal('passwordHash' in body.user, false);
     assert.equal(
       (jwt.verify(body.token, JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload).role,

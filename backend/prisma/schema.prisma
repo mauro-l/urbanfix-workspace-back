@@ -39,6 +39,7 @@ model User {
 
   clientRequests     ServiceRequest[] @relation("RequestClient")
   technicianRequests ServiceRequest[] @relation("RequestTechnician")
+  services           Service[]        @relation("TechnicianServices")
 
   @@map("users")
 }
@@ -53,6 +54,7 @@ model Service {
   createdAt   DateTime @default(now()) @map("created_at")
 
   requests ServiceRequest[]
+  technicians User[] @relation("TechnicianServices")
 
   @@map("services")
 }

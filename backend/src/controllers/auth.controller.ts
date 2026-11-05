@@ -10,6 +10,13 @@ const publicUserSelect = {
   fullName: true,
   phone: true,
   role: true,
+  services: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+    },
+  },
   isActive: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;
@@ -20,6 +27,7 @@ const loginUserSelect = {
 } satisfies Prisma.UserSelect;
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isUniqueConstraintError(error: unknown): boolean {
   return (
@@ -48,6 +56,7 @@ export function createAuthController(
     const fullName = typeof input.fullName === 'string' ? input.fullName.trim() : '';
     const role = input.role;
     const rawPhone = input.phone;
+    const rawServiceIds = input.serviceIds;
 
     if (!email || !password || !fullName || !role) {
       return invalidInput(res, 'Todos los campos obligatorios deben estar completos.');
@@ -61,6 +70,18 @@ export function createAuthController(
     if (role !== UserRole.CLIENTE && role !== UserRole.TECNICO) {
       return invalidInput(res, 'El rol debe ser CLIENTE o TECNICO.');
     }
+    if (rawServiceIds !== undefined && role !== UserRole.TECNICO) {
+      return invalidInput(res, 'Solo los técnicos pueden ofrecer servicios.');
+    }
+    if (
+      rawServiceIds !== undefined &&
+      (!Array.isArray(rawServiceIds) ||
+        rawServiceIds.some((serviceId) => typeof serviceId !== 'string' || !uuidPattern.test(serviceId)) ||
+        new Set(rawServiceIds).size !== rawServiceIds.length)
+    ) {
+      return invalidInput(res, 'Los servicios deben ser UUID válidos sin duplicados.');
+    }
+    const serviceIds = (rawServiceIds ?? []) as string[];
     if (rawPhone !== undefined && rawPhone !== null && typeof rawPhone !== 'string') {
       return invalidInput(res, 'El teléfono debe ser texto.');
     }
@@ -69,6 +90,16 @@ export function createAuthController(
     }
 
     try {
+      const services = serviceIds.length
+        ? await prisma.service.findMany({
+            where: { id: { in: serviceIds }, isActive: true },
+            select: { id: true },
+          })
+        : [];
+      if (services.length !== serviceIds.length) {
+        return invalidInput(res, 'Uno o más servicios no existen o están inactivos.');
+      }
+
       const existing = await prisma.user.findUnique({
         where: { email },
         select: { id: true },
@@ -85,6 +116,9 @@ export function createAuthController(
           fullName,
           phone: typeof rawPhone === 'string' ? rawPhone.trim() || null : null,
           role,
+          ...(services.length > 0 && {
+            services: { connect: services.map(({ id }) => ({ id })) },
+          }),
         },
         select: publicUserSelect,
       });
