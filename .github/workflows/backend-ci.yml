@@ -1,0 +1,124 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  quality:
+    name: Types and migration drift
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16.15-alpine
+        env:
+          POSTGRES_USER: urbanfix
+          POSTGRES_PASSWORD: urbanfix_ci_pw
+          POSTGRES_DB: urbanfix_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U urbanfix -d urbanfix_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://urbanfix:urbanfix_ci_pw@127.0.0.1:5432/urbanfix_ci?schema=public
+      DIRECT_URL: postgresql://urbanfix:urbanfix_ci_pw@127.0.0.1:5432/urbanfix_ci?schema=public
+      SHADOW_DATABASE_URL: postgresql://urbanfix:urbanfix_ci_pw@127.0.0.1:5432/urbanfix_shadow?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Create shadow database
+        run: |
+          PGPASSWORD=urbanfix_ci_pw psql -h 127.0.0.1 -U urbanfix -d urbanfix_ci \
+            -c 'CREATE DATABASE urbanfix_shadow;'
+
+      # Fails with exit code 2 when schema.prisma and the committed migrations
+      # disagree. This is the check that prevents production/local drift.
+      - name: Detect schema/migration drift
+        run: |
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --exit-code
+
+      - name: Apply migrations on a clean database
+        run: npx prisma migrate deploy
+
+      - name: Verify applied migrations
+        run: npx prisma migrate status
+
+  docker-stack:
+    name: Docker stack smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: docker compose --env-file docker.env.example config -q
+
+      - name: Build images
+        run: docker compose --env-file docker.env.example build
+
+      - name: Start stack
+        run: docker compose --env-file docker.env.example up -d
+
+      - name: Wait for API health
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3001/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose --env-file docker.env.example logs --tail=200
+          exit 1
+
+      - name: Verify migrated schema
+        run: |
+          test "$(docker compose --env-file docker.env.example exec -T db \
+            psql -U urbanfix -d urbanfix_dev -tAc \
+            "SELECT to_regclass('public.users');")" = "users"
+          test "$(docker compose --env-file docker.env.example exec -T db \
+            psql -U urbanfix -d urbanfix_dev -tAc \
+            "SELECT to_regclass('public._prisma_migrations');")" = "_prisma_migrations"
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose --env-file docker.env.example logs --tail=200
+
+      - name: Stop stack
+        if: always()
+        run: docker compose --env-file docker.env.example down -v

@@ -12,7 +12,15 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "docker:up": "docker compose --env-file docker.env up -d --build",
+    "docker:down": "docker compose --env-file docker.env down",
+    "docker:reset": "docker compose --env-file docker.env down -v && docker compose --env-file docker.env up -d --build && docker compose --env-file docker.env run --rm seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "keywords": [],
   "author": "",

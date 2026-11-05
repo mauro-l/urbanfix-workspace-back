@@ -1,43 +1,57 @@
 # Backend local development
 
-## PostgreSQL with Docker Compose
+The full local environment (PostgreSQL, schema migrations, demo seed and API) runs with Docker Compose.
+The canonical instructions for QA and frontend live in [`../docs/02-entorno-local-docker.md`](../docs/02-entorno-local-docker.md).
+The implementation notes (Dockerfile, Compose, CI and drift guarantees) live in
+[`../docs/03-implementacion-docker-ci.md`](../docs/03-implementacion-docker-ci.md).
 
-This Compose setup runs PostgreSQL 16.15 locally. The API remains a host process; Neon configuration in `.env` is left unchanged.
+## Quick start
 
-In WSL, interactive Bash uses `~/.docker-wsl` for the Linux Docker CLI configuration so a Windows Desktop-only credential helper does not break local image pulls. The existing `~/.docker` configuration is preserved. Open a new shell or run `source ~/.bashrc` after installation.
-
-The tracked `docker.env.example` contains local-only development credentials. Copy it once to the ignored `docker.env` file if it does not already exist:
+From this directory:
 
 ```sh
 cp docker.env.example docker.env
+docker compose --env-file docker.env up -d --build
 ```
 
-Start PostgreSQL from this directory:
+That starts PostgreSQL on `127.0.0.1:5433`, applies every committed Prisma migration, and serves the API on
+`http://127.0.0.1:3001` (`/health`, `/openapi.json`, `/docs`).
+
+Optional demo data:
 
 ```sh
-docker compose --env-file docker.env up -d db
-docker compose --env-file docker.env ps
-docker compose --env-file docker.env exec db pg_isready -U urbanfix -d urbanfix_dev
+docker compose --env-file docker.env run --rm seed
 ```
 
-The container binds PostgreSQL to `127.0.0.1:5433` to avoid conflicting with a local PostgreSQL service on `5432` and to keep the development database off other network interfaces. Its named volume keeps database files when the container stops.
-
-To run Prisma or the API against this local database in a Bash shell, export the local settings first:
-
-```sh
-set -a
-. ./docker.env
-set +a
-npm run db:generate
-npm run dev
-```
-
-After Prisma models are added, run `npm run db:migrate` in the same shell to create the local schema. The `DIRECT_URL` points to the same local database because it does not use a pooler.
-
-Stop the container without deleting its data:
+Stop the stack without deleting data:
 
 ```sh
 docker compose --env-file docker.env down
 ```
 
-`docker compose down -v` also deletes the named database volume and all data stored in it. Use that only when intentionally resetting the local database.
+## Backend-only workflow (host process)
+
+To iterate on the API with hot reload, run only the database and the migrator, then start the host process:
+
+```sh
+docker compose --env-file docker.env up -d db migrate
+
+set -a
+. ./docker.env
+set +a
+
+npm run db:generate
+npm run dev
+```
+
+`docker.env` points `DATABASE_URL`/`DIRECT_URL` at `127.0.0.1:5433` for host processes. Containers ignore those
+values and build their own URLs against the `db` service, so the Neon configuration in `.env` is never used by
+Compose.
+
+## Schema changes
+
+The schema is owned by `prisma/migrations`. Only the backend owner runs `npm run db:migrate` (which creates
+migrations). QA and frontend must never run `prisma db push` or edit the database schema by hand.
+
+`docker compose ... up -d --build` reapplies pending migrations automatically, so after `git pull` the local
+database is always at the same schema version as production.

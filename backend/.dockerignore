@@ -1,0 +1,20 @@
+node_modules
+dist
+npm-debug.log*
+*.log
+
+# Never bake local credentials or generated state into an image.
+.env
+.env.*
+docker.env
+.neon
+.git
+.gitignore
+
+# Local tooling and editor noise
+.agents
+.atl
+opencode.json
+skills-lock.json
+.DS_Store
+Thumbs.db
