@@ -6,7 +6,8 @@ services:
     region: virginia
     rootDir: backend
     buildCommand: npm ci --include=dev && npx prisma generate && npm run build
-    startCommand: npx prisma migrate deploy && npm run start
+    preDeployCommand: npx prisma migrate deploy
+    startCommand: npm run start
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
